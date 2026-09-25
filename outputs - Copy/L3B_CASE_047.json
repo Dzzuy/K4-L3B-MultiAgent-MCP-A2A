@@ -1,0 +1,115 @@
+{
+  "schema_version": "day09-l3b-output-v2",
+  "case_id": "L3B_CASE_047",
+  "assessment": {
+    "primary_issue": "insufficient_evidence",
+    "secondary_issues": [
+      "unsupported_claim"
+    ],
+    "case_status": "needs_investigation",
+    "confidence": 0.85
+  },
+  "affected_entities": {
+    "order_ids": [
+      "fd28a6dfe413804d0b89b7c9abf5b1f3"
+    ],
+    "item_ids": [
+      "item-fd28a6dfe413"
+    ],
+    "seller_ids": [
+      "seller-fd28a6dfe413"
+    ],
+    "payment_references": [],
+    "shipment_ids": []
+  },
+  "claim_assessments": [
+    {
+      "claim_id": "claim-047-a",
+      "verdict": "supported",
+      "confidence": 0.85,
+      "evidence_refs": [
+        "ev_RTUa49yHBfMwSX004CR33IaJCfy7SEl_",
+        "ev_70mHelUXUltQedDsHVgr343APu7UVvEW",
+        "ev_hueSBkPddeldVPs9-A51kZ9zp2BhJxYV",
+        "ev_VJswCe5N-uDwwKSZhxGnPO0HOG79soj8",
+        "ev_V6oKitE33gvfMLevF6dXJaTC37dT-9f8"
+      ]
+    },
+    {
+      "claim_id": "claim-047-b",
+      "verdict": "supported",
+      "confidence": 0.85,
+      "evidence_refs": [
+        "ev_RTUa49yHBfMwSX004CR33IaJCfy7SEl_",
+        "ev_70mHelUXUltQedDsHVgr343APu7UVvEW",
+        "ev_hueSBkPddeldVPs9-A51kZ9zp2BhJxYV",
+        "ev_VJswCe5N-uDwwKSZhxGnPO0HOG79soj8",
+        "ev_V6oKitE33gvfMLevF6dXJaTC37dT-9f8"
+      ]
+    }
+  ],
+  "entity_resolution": {
+    "status": "resolved",
+    "resolved_order_ids": [
+      "fd28a6dfe413804d0b89b7c9abf5b1f3"
+    ],
+    "rejected_candidates": [
+      "candidate-047"
+    ],
+    "confidence": 0.95
+  },
+  "customer_context": {
+    "customer_unique_id": "customer-b7c9abf5b1f3",
+    "related_order_ids": [
+      "fd28a6dfe413804d0b89b7c9abf5b1f3"
+    ]
+  },
+  "shipment_analysis": {
+    "verdict": "on_time",
+    "late_seller_ids": [],
+    "timeline_complete": true
+  },
+  "payment_analysis": {
+    "verdict": "insufficient_evidence",
+    "captured_total_brl": 105.0,
+    "refunded_total_brl": null,
+    "refundable_total_brl": 105.0
+  },
+  "root_cause_analysis": {
+    "ranked_causes": [
+      {
+        "cause_code": "LOGISTICS_CARRIER_DELAY",
+        "rank": 1
+      }
+    ],
+    "responsible_parties": [
+      {
+        "party_type": "logistics_provider",
+        "party_id": null
+      }
+    ]
+  },
+  "evidence_refs": [
+    "ev_RTUa49yHBfMwSX004CR33IaJCfy7SEl_",
+    "ev_70mHelUXUltQedDsHVgr343APu7UVvEW",
+    "ev_hueSBkPddeldVPs9-A51kZ9zp2BhJxYV",
+    "ev_VJswCe5N-uDwwKSZhxGnPO0HOG79soj8",
+    "ev_V6oKitE33gvfMLevF6dXJaTC37dT-9f8"
+  ],
+  "data_conflicts": [],
+  "financial_resolution": {
+    "currency": "BRL",
+    "recommended_refund_brl": 105.0,
+    "refund_lines": [
+      {
+        "reason_code": "CUSTOMER_COMPLAINT_REFUND",
+        "amount_brl": 105.0,
+        "entity_id": "fd28a6dfe413804d0b89b7c9abf5b1f3"
+      }
+    ]
+  },
+  "resolution_actions": [
+    "investigate_late_delivery",
+    "review_payment_details"
+  ]
+}
