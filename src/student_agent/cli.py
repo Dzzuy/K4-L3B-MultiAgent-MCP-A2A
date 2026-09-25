@@ -6,13 +6,18 @@ import json
 import sys
 from pathlib import Path
 
+from .agents.protocol import is_transport_failure
 from .cases import load_case_set
 from .config import Settings
 from .contracts import Contracts
+from .llm import OpenRouterAuditor
 from .mcp_gateway import connect_gateway
 from .submission import package_submission, validate_artifacts
 from .trace import TraceWriter
 from .workflow import solve_case
+
+MAX_GATEWAY_RECONNECTS = 5
+MAX_RECONNECT_DELAY_SECONDS = 8.0
 
 
 def _root(value: str) -> Path:
@@ -27,6 +32,10 @@ async def _show_tools(root: Path) -> None:
             print(tool)
 
 
+def _reconnect_delay(attempt: int) -> float:
+    return min(2.0 ** (attempt - 1), MAX_RECONNECT_DELAY_SECONDS)
+
+
 async def _run(root: Path) -> None:
     settings = Settings.load(root)
     case_set = load_case_set(root)
@@ -39,25 +48,49 @@ async def _run(root: Path) -> None:
         stale.unlink()
     trace_path.unlink(missing_ok=True)
     trace = TraceWriter(trace_path, contracts)
-
-    async with connect_gateway(settings.mcp_endpoint, settings.team_api_key, contracts) as gateway:
-        discovered_tools = await gateway.list_tools()
-        if not discovered_tools:
-            raise RuntimeError("MCP Gateway returned no tools")
-        for case_id in case_set.case_ids:
-            case = case_set.cases[case_id]
-            trace.emit(case_id=case_id, event_type="case_received", actor="coordinator")
-            output = await solve_case(case, gateway, trace)
-            contracts.validate_output(output, f"outputs/{case_id}.json")
-            if output.get("case_id") != case_id:
-                raise ValueError(f"solver returned a mismatched case_id for {case_id}")
-            target = output_root / f"{case_id}.json"
-            temporary = target.with_suffix(".json.tmp")
-            temporary.write_text(
-                json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-            )
-            temporary.replace(target)
-            trace.emit(case_id=case_id, event_type="case_finalized", actor="coordinator")
+    auditor = OpenRouterAuditor(settings)
+    pending = list(case_set.case_ids)
+    reconnects = 0
+    try:
+        while pending:
+            try:
+                async with connect_gateway(
+                    settings.mcp_endpoint, settings.team_api_key, contracts
+                ) as gateway:
+                    if not await gateway.list_tools():
+                        raise RuntimeError("MCP Gateway returned no tools")
+                    while pending:
+                        case_id = pending[0]
+                        case = case_set.cases[case_id]
+                        trace.emit(case_id=case_id, event_type="case_received", actor="coordinator")
+                        output = await solve_case(case, gateway, trace, auditor)
+                        contracts.validate_output(output, f"outputs/{case_id}.json")
+                        if output.get("case_id") != case_id:
+                            raise ValueError(f"solver returned a mismatched case_id for {case_id}")
+                        target = output_root / f"{case_id}.json"
+                        temporary = target.with_suffix(".json.tmp")
+                        temporary.write_text(
+                            json.dumps(output, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+                        temporary.replace(target)
+                        trace.emit(
+                            case_id=case_id, event_type="case_finalized", actor="coordinator"
+                        )
+                        pending.pop(0)
+                        reconnects = 0
+            except Exception as exc:
+                if not is_transport_failure(exc):
+                    raise
+                reconnects += 1
+                if reconnects > MAX_GATEWAY_RECONNECTS:
+                    raise RuntimeError(
+                        f"gateway reconnects exhausted at {pending[0]} after {reconnects} "
+                        f"failures: {type(exc).__name__}: {exc}"
+                    ) from exc
+                await asyncio.sleep(_reconnect_delay(reconnects))
+    finally:
+        await auditor.aclose()
 
 
 def parser() -> argparse.ArgumentParser:
@@ -80,8 +113,7 @@ def main() -> None:
         if args.command == "validate-inputs":
             case_set = load_case_set(root)
             print(
-                f"OK: {case_set.variant_id} / {case_set.version} / "
-                f"{len(case_set.case_ids)} cases"
+                f"OK: {case_set.variant_id} / {case_set.version} / {len(case_set.case_ids)} cases"
             )
         elif args.command == "mcp-tools":
             asyncio.run(_show_tools(root))

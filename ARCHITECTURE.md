@@ -1,55 +1,51 @@
 # L3B Architecture Record
 
-Team phải cập nhật tài liệu này cùng source. Mục tiêu là mô tả quyết định có thể kiểm chứng, không ghi prompt bí mật hoặc chain-of-thought.
-
-## 1. System overview
-
-Vẽ hoặc mô tả luồng từ input/candidate resolution đến MCP investigation, specialist agents, conflict resolver, verifier, output và trace.
+## System overview
 
 ```text
-Input → Entity Resolver → Coordinator → Specialists → Conflict Resolver → Verifier → Output
-            │                              │                  │             │
-            └──────────────────────────── MCP ────────────────┴──────────── Trace
+Input Case → Entity/Customer → Order/Product → Coordinator
+                    customer history          ├→ Shipment
+                    candidate verification    └→ Payment/Refund
+                                                  ↓
+                               Policy rules + optional Qwen audit → Verifier → L3B JSON
 ```
 
-## 2. Agent ownership
+Shipment and payment agents run concurrently after order resolution.
 
-| Actor | Input | Trách nhiệm | Tool permission | Output/handoff |
-| --- | --- | --- | --- | --- |
-| Entity/customer | TODO | TODO | TODO | TODO |
-| Coordinator | TODO | TODO | TODO | TODO |
-| Order/product | TODO | TODO | TODO | TODO |
-| Shipment | TODO | TODO | TODO | TODO |
-| Payment/refund | TODO | TODO | TODO | TODO |
-| Policy | TODO | TODO | TODO | TODO |
-| Conflict resolver | TODO | TODO | TODO | TODO |
-| Verifier | TODO | TODO | TODO | TODO |
+## Agent ownership
 
-Áp dụng least privilege; tool discovery không đồng nghĩa mọi actor đều được gọi mọi tool.
+| Agent | MCP tools |
+| --- | --- |
+| entity/customer | `get_customer_history`, candidate `get_order` |
+| order/product | `get_order`, `get_order_items`, `get_product_context`, conditional `get_sellers` |
+| shipment | `get_shipment_summary` |
+| payment/refund | `get_order_payments`, `get_payment_timeline`, conditional `get_refund_timeline` |
+| policy | `get_policy` |
+| verifier | none |
 
-## 3. Entity resolution và A2A protocol
+## Entity and evidence lifecycle
 
-Mô tả cách xếp hạng/reject candidate, confidence threshold, message envelope, correlation theo `case_id`, điều kiện handoff, timeout và cách tránh vòng lặp. Không trace nội dung suy luận riêng.
+Input hints and claimed orders are not ground truth. Customer history independently links orders; rejected-candidate evidence cannot support a selected order. Multiple valid candidates remain ambiguous: there is no latest-order heuristic.
 
-## 4. Evidence và conflict lifecycle
+The gateway validates an envelope, then `Evidence` preserves its verbatim `evidence_ref` and internal call arguments. `tool_result_consumed` is emitted, identical calls use a per-case cache, policy selects required tools for the selected entity, and verifier filters again. Evidence is never reused across cases.
 
-Mô tả cách validate MCP response, lưu `evidence_ref`, chọn source theo policy, biểu diễn unresolved conflict, map evidence vào claim/output và emit `tool_result_consumed`. Evidence không được tái sử dụng giữa các case.
+## Facts, policy, and verification
 
-## 5. Failure and efficiency policy
+Rows outside the lifecycle window are excluded. Payment rows reconcile copied captures, and split payments are not duplicates. Seller deadlines are seller-specific; overdue undelivered orders can be late; authoritative order dates override misleading shipment events.
 
-| Failure | Retry budget | Fallback | Trace event/code |
-| --- | ---: | --- | --- |
-| MCP timeout | TODO | TODO | TODO |
-| Entity not found/ambiguous | TODO | TODO | TODO |
-| Source conflict | TODO | TODO | TODO |
-| Invalid specialist result | TODO | TODO | TODO |
+Missing policy means insufficient evidence. Supported secondary claims remain supported. Pending/failed refunds are capped by outstanding capture. Seller responsibility is scoped to affected and late sellers. Verifier checks provenance, selected-order scope, policy evidence, finance totals, seller scope, confidence, and the final L3B schema.
 
-Nêu query budget/cache strategy để tránh gọi lặp và quét rộng. Retry phải có giới hạn, idempotent và không biến missing evidence thành dữ liệu phỏng đoán.
+Qwen/OpenRouter is optional and advisory only. Deterministic evidence-backed rules remain authoritative: audit disagreement cannot alter the issue, refund, evidence, or responsibility.
 
-## 6. Verification invariants
+## Failure, efficiency, and reproducibility
 
-Liệt kê kiểm tra trước finalize: schema, entity scope, rejected candidates, evidence ownership, claim linkage, timeline, payment/refund totals, source precedence, responsibility/action consistency và confidence bounds.
+Tool retries and gateway reconnects are bounded. Refund/seller calls are conditional, product context follows scope, and the system avoids brute-force scans and infinite retries.
 
-## 7. Reproducibility
-
-Ghi model/config, dependency pinning, concurrency limit, random seed (nếu có), lệnh chạy và giới hạn tài nguyên. Không ghi API key.
+```bash
+python -m pip install -e ".[dev]"
+day09 validate-inputs
+day09 mcp-tools
+day09 run
+day09 validate
+day09 package --output dist/submission.zip
+```

@@ -4,8 +4,16 @@ import asyncio
 from typing import Any
 
 from . import OUTPUT_SCHEMA_VERSION
-from .agents import entity_agent, order_agent, payment_agent, policy_agent, shipment_agent, verifier
+from .agents import (
+    entity_agent,
+    order_agent,
+    payment_agent,
+    policy_agent,
+    shipment_agent,
+    verifier,
+)
 from .agents.protocol import assign, handoff
+from .llm import OpenRouterAuditor
 from .mcp_gateway import EvidenceGateway
 from .state import AgentResult, CaseState
 from .trace import TraceWriter
@@ -16,13 +24,23 @@ def _empty_result(actor: str, code: str) -> AgentResult:
 
 
 async def solve_case(
-    case: dict[str, Any], gateway: EvidenceGateway, trace: TraceWriter
+    case: dict[str, Any],
+    gateway: EvidenceGateway,
+    trace: TraceWriter,
+    auditor: OpenRouterAuditor | None = None,
 ) -> dict[str, Any]:
     state = CaseState.from_case(case)
 
     assign(trace, state, "entity-agent", "RESOLVE_ENTITY_AND_CUSTOMER")
     entity = await entity_agent.run(state, gateway, trace)
-    handoff(trace, state, "entity-agent", "order-agent", entity.notes_code, entity.evidence_refs)
+    handoff(
+        trace,
+        state,
+        "entity-agent",
+        "order-agent",
+        entity.notes_code,
+        entity.evidence_refs,
+    )
 
     if state.selected_order_id:
         assign(trace, state, "order-agent", "VERIFY_ORDER_AND_ITEMS")
@@ -31,8 +49,22 @@ async def solve_case(
         order = _empty_result("order-agent", "SKIPPED_NO_RESOLVED_ORDER")
 
     if order.ok:
-        handoff(trace, state, "order-agent", "shipment-agent", "ORDER_READY", order.evidence_refs)
-        handoff(trace, state, "order-agent", "payment-agent", "ORDER_READY", order.evidence_refs)
+        handoff(
+            trace,
+            state,
+            "order-agent",
+            "shipment-agent",
+            "ORDER_READY",
+            order.evidence_refs,
+        )
+        handoff(
+            trace,
+            state,
+            "order-agent",
+            "payment-agent",
+            "ORDER_READY",
+            order.evidence_refs,
+        )
         assign(trace, state, "shipment-agent", "ANALYZE_SHIPMENT")
         assign(trace, state, "payment-agent", "ANALYZE_PAYMENT_REFUND")
         shipment, payment = await asyncio.gather(
@@ -61,8 +93,15 @@ async def solve_case(
     )
 
     assign(trace, state, "policy-agent", "ARBITRATE_WITH_POLICY")
-    decision = await policy_agent.run(state, gateway, trace, order, shipment, payment)
-    handoff(trace, state, "policy-agent", "verifier", "RESOLUTION_PROPOSED", decision["evidence_refs"])
+    decision = await policy_agent.run(state, gateway, trace, order, shipment, payment, auditor)
+    handoff(
+        trace,
+        state,
+        "policy-agent",
+        "verifier",
+        "RESOLUTION_PROPOSED",
+        decision["evidence_refs"],
+    )
 
     shipment_analysis = {
         "verdict": shipment.findings.get("verdict", "insufficient_evidence"),
