@@ -23,8 +23,11 @@ async def _show_tools(root: Path) -> None:
     settings = Settings.load(root)
     contracts = Contracts(root / "contracts" / "schemas")
     async with connect_gateway(settings.mcp_endpoint, settings.team_api_key, contracts) as gateway:
-        for tool in await gateway.list_tools():
-            print(tool)
+        defs = await gateway.get_tool_definitions()
+        for name, schema in sorted(defs.items()):
+            props = list(schema.get("properties", {}).keys()) if isinstance(schema, dict) else []
+            req = schema.get("required", []) if isinstance(schema, dict) else []
+            print(f"{name}: required={req}, properties={props}")
 
 
 async def _run(root: Path) -> None:
@@ -44,7 +47,10 @@ async def _run(root: Path) -> None:
         discovered_tools = await gateway.list_tools()
         if not discovered_tools:
             raise RuntimeError("MCP Gateway returned no tools")
-        for case_id in case_set.case_ids:
+        print(f"Discovered {len(discovered_tools)} tools: {discovered_tools}")
+
+        total_cases = len(case_set.case_ids)
+        for idx, case_id in enumerate(case_set.case_ids, 1):
             case = case_set.cases[case_id]
             trace.emit(case_id=case_id, event_type="case_received", actor="coordinator")
             output = await solve_case(case, gateway, trace)
@@ -58,6 +64,8 @@ async def _run(root: Path) -> None:
             )
             temporary.replace(target)
             trace.emit(case_id=case_id, event_type="case_finalized", actor="coordinator")
+            if idx % 10 == 0 or idx == total_cases:
+                print(f"Processed {idx}/{total_cases} cases...")
 
 
 def parser() -> argparse.ArgumentParser:

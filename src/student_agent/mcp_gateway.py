@@ -21,6 +21,10 @@ class EvidenceGateway:
         response = await self._session.list_tools()
         return sorted(tool.name for tool in response.tools)
 
+    async def get_tool_definitions(self) -> dict[str, Any]:
+        response = await self._session.list_tools()
+        return {tool.name: getattr(tool, "inputSchema", {}) for tool in response.tools}
+
     async def call(self, tool_name: str, *, case_id: str, **arguments: str) -> dict[str, Any]:
         payload = {"case_id": case_id, **arguments}
         result = await self._session.call_tool(tool_name, arguments=payload)
@@ -49,7 +53,9 @@ async def connect_gateway(
     timeout = httpx2.Timeout(300.0, connect=30.0, write=30.0, pool=30.0)
     async with (
         httpx2.AsyncClient(headers=headers, timeout=timeout) as http_client,
-        streamable_http_client(endpoint, http_client=http_client) as (read_stream, write_stream),
+        streamable_http_client(
+            endpoint, http_client=http_client, terminate_on_close=False
+        ) as (read_stream, write_stream),
         ClientSession(read_stream, write_stream) as session,
     ):
         await session.initialize()

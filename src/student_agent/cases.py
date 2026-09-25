@@ -20,10 +20,14 @@ class CaseSet:
 
 
 def _object(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise ValueError(f"{path}: file not found")
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"{path}: invalid UTF-8 JSON") from exc
+    except OSError as exc:
+        raise ValueError(f"{path}: cannot read file") from exc
     if not isinstance(value, dict):
         raise ValueError(f"{path}: expected a JSON object")
     return value
@@ -31,9 +35,28 @@ def _object(path: Path) -> dict[str, Any]:
 
 def load_case_set(root: Path, expected_count: int = 100) -> CaseSet:
     root = root.resolve()
-    manifest = _object(root / "case-set.json")
+
+    # Prioritize l3b-inputs-v1 bundle if present
+    bundle_path = root / "l3b-inputs-v1"
+    if (bundle_path / "case-set.json").is_file() and (bundle_path / "inputs").is_dir():
+        manifest_path = bundle_path / "case-set.json"
+        input_root = bundle_path / "inputs"
+    elif (root / "case-set.json").is_file():
+        manifest_path = root / "case-set.json"
+        input_root = root / "inputs"
+    else:
+        # Search for any unzipped bundle directory
+        matches = [p for p in root.glob("l3*-inputs*") if (p / "case-set.json").is_file()]
+        if matches:
+            manifest_path = matches[0] / "case-set.json"
+            input_root = matches[0] / "inputs"
+        else:
+            manifest_path = root / "case-set.json"
+            input_root = root / "inputs"
+
+    manifest = _object(manifest_path)
     if set(manifest) != {"case_set_version", "variant_id", "case_ids"}:
-        raise ValueError("case-set.json has unexpected or missing fields")
+        raise ValueError(f"{manifest_path}: case-set.json has unexpected or missing fields")
     if manifest["variant_id"] != VARIANT_ID:
         raise ValueError(f"expected variant {VARIANT_ID}, got {manifest['variant_id']!r}")
     raw_ids = manifest["case_ids"]
@@ -47,7 +70,6 @@ def load_case_set(root: Path, expected_count: int = 100) -> CaseSet:
     if not isinstance(version, str) or not version:
         raise ValueError("case_set_version must be a non-empty string")
 
-    input_root = root / "inputs"
     actual_files = {path.stem: path for path in input_root.glob("*.json") if path.is_file()}
     if set(actual_files) != set(raw_ids):
         missing = sorted(set(raw_ids) - set(actual_files))
